@@ -1,0 +1,64 @@
+name: SBOM Generation and Vulnerability Scan
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  sbom-security-scan:
+    name: Generate and Scan SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build application and generate CycloneDX SBOM
+        run: mvn clean package
+
+      - name: Create SBOM artifacts folder
+        run: |
+          mkdir -p security-reports/sbom
+          cp target/classes/META-INF/sbom/application.cdx.json security-reports/sbom/book-inventory-sbom.cdx.json
+
+      - name: Install OSV Scanner
+        run: |
+          curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
+          chmod +x osv-scanner
+          sudo mv osv-scanner /usr/local/bin/osv-scanner
+          osv-scanner --version
+
+      - name: Scan SBOM with OSV Scanner
+        run: |
+          mkdir -p security-reports/vulnerability-scan
+          osv-scanner --sbom security-reports/sbom/book-inventory-sbom.cdx.json \
+            --format json \
+            --output security-reports/vulnerability-scan/osv-scan-report.json
+
+      - name: Upload SBOM and scan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-security-reports
+          path: security-reports/
+
+      - name: Show scan report summary
+        if: always()
+        run: |
+          echo "SBOM and vulnerability scan completed."
+          echo "Generated files:"
+          find security-reports -type f
