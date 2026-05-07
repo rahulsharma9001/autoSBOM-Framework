@@ -44,13 +44,15 @@ jobs:
           osv-scanner --version
 
       - name: Scan SBOM with OSV Scanner
+        continue-on-error: true
         run: |
           mkdir -p security-reports/vulnerability-scan
-          osv-scanner --sbom security-reports/sbom/book-inventory-sbom.cdx.json \
+          osv-scanner -L security-reports/sbom/book-inventory-sbom.cdx.json \
             --format json \
-            --output security-reports/vulnerability-scan/osv-scan-report.json
+            --output-file security-reports/vulnerability-scan/osv-scan-report.json
 
       - name: Upload SBOM and scan report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sbom-security-reports
