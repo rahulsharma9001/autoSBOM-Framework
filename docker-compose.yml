@@ -1,0 +1,24 @@
+services:
+  dtrack-apiserver:
+    image: dependencytrack/apiserver
+    container_name: dtrack-apiserver
+    ports:
+      - "8081:8080"
+    volumes:
+      - dependency-track-data:/data
+    restart: unless-stopped
+
+  dtrack-frontend:
+    image: dependencytrack/frontend
+    container_name: dtrack-frontend
+    ports:
+      - "8080:8080"
+    environment:
+      API_BASE_URL: "http://localhost:8081"
+    depends_on:
+      - dtrack-apiserver
+    restart: unless-stopped
+
+volumes:
+  dependency-track-data:
+  
