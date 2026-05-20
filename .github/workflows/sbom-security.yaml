@@ -1,4 +1,4 @@
-name: SBOM Generation and Vulnerability Scan
+name: SBOM Generation and Trivy Vulnerability Scan
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
 
 jobs:
   sbom-security-scan:
-    name: Generate and Scan SBOM
+    name: Generate and Scan SBOM with Trivy
     runs-on: ubuntu-latest
 
     steps:
@@ -36,31 +36,57 @@ jobs:
           mkdir -p security-reports/sbom
           cp target/classes/META-INF/sbom/application.cdx.json security-reports/sbom/book-inventory-sbom.cdx.json
 
-      - name: Install OSV Scanner
+      - name: Install Trivy
         run: |
-          curl -L https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o osv-scanner
-          chmod +x osv-scanner
-          sudo mv osv-scanner /usr/local/bin/osv-scanner
-          osv-scanner --version
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+          trivy --version
 
-      - name: Scan SBOM with OSV Scanner
+      - name: Scan SBOM with Trivy - JSON Report
         continue-on-error: true
         run: |
           mkdir -p security-reports/vulnerability-scan
-          osv-scanner -L security-reports/sbom/book-inventory-sbom.cdx.json \
+          trivy sbom security-reports/sbom/book-inventory-sbom.cdx.json \
             --format json \
-            --output-file security-reports/vulnerability-scan/osv-scan-report.json
+            --output security-reports/vulnerability-scan/trivy-sbom-report.json
 
-      - name: Upload SBOM and scan report
+      - name: Scan filesystem with Trivy - JSON Report
+        continue-on-error: true
+        run: |
+          trivy fs . \
+            --scanners vuln,secret,misconfig \
+            --format json \
+            --output security-reports/vulnerability-scan/trivy-fs-report.json
+
+      - name: Generate Trivy SARIF Report for GitHub Security
+        continue-on-error: true
+        run: |
+          trivy fs . \
+            --scanners vuln,secret,misconfig \
+            --format sarif \
+            --output security-reports/vulnerability-scan/trivy-results.sarif
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/vulnerability-scan/trivy-results.sarif
+
+      - name: Upload SBOM and Trivy scan reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-security-reports
+          name: sbom-trivy-security-reports
           path: security-reports/
 
-      - name: Show scan report summary
+      - name: Show generated report files
         if: always()
         run: |
-          echo "SBOM and vulnerability scan completed."
+          echo "SBOM and Trivy vulnerability scan completed."
           echo "Generated files:"
           find security-reports -type f
